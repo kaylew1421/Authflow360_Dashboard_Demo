@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global body styles */
+body {
+  @apply bg-gray-100 text-gray-900 font-sans;
+}
+
+/* Form elements */
+input,
+select,
+textarea,
+button {
+  @apply border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500;
+}
+
+/* Section title styling */
+.section-title {
+  @apply text-lg font-semibold mt-6 mb-2 text-gray-800;
+}
+
+/* Table styles */
+table {
+  @apply w-full border-collapse mt-4 text-sm;
+}
+
+th {
+  @apply bg-gray-200 text-left px-4 py-2;
+}
+
+td {
+  @apply border-t px-4 py-2;
+}
+
+/* Button styles */
+.button {
+  @apply bg-indigo-600 text-white font-medium px-4 py-2 rounded hover:bg-indigo-700 transition;
+}
+
+.button-secondary {
+  @apply bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300;
+}
+
+/* Container padding */
+.container {
+  @apply p-6;
+}
+
+/* Layout utilities */
+.flex-center {
+  @apply flex items-center justify-center;
+}
+
+/* Attachment Preview */
+.attachment-preview {
+  @apply text-sm text-gray-600 mb-4;
+}
+
+/* Form spacing */
+.form-section {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-4;
+}
+
+.form-row {
+  @apply grid grid-cols-1 md:grid-cols-4 gap-4 mb-2;
+}
