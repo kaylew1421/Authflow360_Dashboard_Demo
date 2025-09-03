@@ -1,15 +1,24 @@
 // src/components/PayerTable.tsx
 import { useState } from "react";
 import { usePayers, Payer } from "../hooks/usePayers";
+import { useDebounce } from "../hooks/useDebounce";
 
-export default function PayerTable(): JSX.Element {
+export default function PayerTable() {
   const [q, setQ] = useState("");
   const [state, setState] = useState("TX");
   const [plan, setPlan] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  const { items, total, loading, error } = usePayers({ q, state, plan, page, pageSize });
+  const qDebounced = useDebounce(q, 300);
+  const { items, total, loading, error } = usePayers({
+    q: qDebounced,
+    state,
+    plan,
+    page,
+    pageSize,
+  });
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -81,12 +90,7 @@ export default function PayerTable(): JSX.Element {
                 <td className="p-2">{p.turnaround_days} days</td>
                 <td className="p-2">{p.auth_required ? "Yes" : "No"}</td>
                 <td className="p-2">
-                  <a
-                    className="underline"
-                    href={p.portal_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a className="underline" href={p.portal_url} target="_blank" rel="noreferrer">
                     Open
                   </a>
                 </td>
