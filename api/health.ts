@@ -1,15 +1,19 @@
+// /api/health.ts
 export const config = { runtime: "edge" };
+import { neon } from "@neondatabase/serverless";
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
-  });
-}
-
-export default async function handler(_req: Request) {
-  return json({ ok: true, time: new Date().toISOString() });
+export default async function handler() {
+  try {
+    const sql = neon(process.env.POSTGRES_URL!);   // ensure var exists in Vercel
+    const rows = await sql`select 1 as ok`;
+    return new Response(
+      JSON.stringify({ ok: true, db: rows?.[0]?.ok === 1 }),
+      { headers: { "content-type": "application/json" } }
+    );
+  } catch (e: any) {
+    return new Response(
+      JSON.stringify({ ok: false, error: String(e?.message || e) }),
+      { status: 500, headers: { "content-type": "application/json" } }
+    );
+  }
 }
