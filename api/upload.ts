@@ -1,37 +1,57 @@
-// /api/upload.ts
-export const config = { runtime: "edge" };
+// root/api/upload.ts
+// Vercel Serverless Function (Node runtime)
+export const config = { runtime: "nodejs18.x" };
 
-import { put } from "@vercel/blob";
+type VercelReq = NodeJS.ReadableStream & {
+  method?: string;
+  headers: Record<string, string | string[] | undefined>;
+};
+type VercelRes = {
+  status: (code: number) => VercelRes;
+  setHeader: (name: string, value: string) => void;
+  json: (data: any) => void;
+};
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
+function readStreamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
   });
 }
 
-export default async function handler(req: Request) {
-  if (req.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
-
+export default async function handler(req: VercelReq, res: VercelRes) {
   try {
-    const form = await req.formData();
-    const file = form.get("file") as File | null;
-    if (!file) return json({ ok: false, error: "No file provided" }, 400);
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, error: "Method Not Allowed" });
+      return;
+    }
 
-    const blob = await put(file.name, file, {
-      access: "public",          // <-- change from "private"
-      addRandomSuffix: true,
-    });
+    const filename =
+      (req.headers["x-filename"] as string | undefined) ?? "unnamed.bin";
+    const filetype =
+      (req.headers["x-file-type"] as string | undefined) ??
+      "application/octet-stream";
 
-    return json({
+    // read raw bytes
+    const fileBuffer = await readStreamToBuffer(req);
+    const size = fileBuffer.byteLength;
+
+    // TODO: Persist to your storage (S3, Vercel Blob, etc.)
+    // For now we return mock metadata:
+    const url = `/uploads/${encodeURIComponent(filename)}`;
+
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json({
       ok: true,
-      key: blob.pathname,
-      url: blob.url,
-      name: file.name,
-      size: file.size,
-      type: file.type,
+      key: filename, // replace with storage key/id when you add real storage
+      url,
+      name: decodeURIComponent(filename),
+      size,
+      type: filetype,
     });
-  } catch (e: any) {
-    return json({ ok: false, error: String(e?.message || e) }, 500);
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Upload failed" });
   }
 }
