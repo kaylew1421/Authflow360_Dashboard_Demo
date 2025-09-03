@@ -1,134 +1,142 @@
 // /api/submissions.ts
 export const config = { runtime: "edge" };
-import { neon, neonConfig } from "@neondatabase/serverless";
-neonConfig.fetchConnectionCache = true;
+
+import { neon } from "@neondatabase/serverless";
+
+type Submission = {
+  id: string;
+  createdAt: string;
+  patientName: string;
+  dob: string;
+  payerId: string;
+  payerName: string;
+  cpt: string;
+  icd10: string;
+  urgency: "Routine" | "Urgent" | "Emergent";
+  status: string;
+  etaDays: number;
+  notes: string;
+  meta: unknown;
+};
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET, POST, OPTIONS",
-      "access-control-allow-headers": "Content-Type, Authorization",
-    },
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 }
 
-// Lazy init so import won't crash if env missing
-let _sql: ReturnType<typeof neon> | null = null;
-function getSql() {
-  const url = process.env.POSTGRES_URL;
-  if (!url) throw new Error("Missing POSTGRES_URL");
-  if (!_sql) _sql = neon(url);
-  return _sql;
-}
+const sql = neon(process.env.POSTGRES_URL!);
 
 async function ensureSchema() {
-  const sql = getSql();
+  // id as text (we generate with crypto.randomUUID), meta as jsonb
   await sql`
-    CREATE TABLE IF NOT EXISTS submissions (
-      id           TEXT PRIMARY KEY,
-      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      patient_name TEXT NOT NULL,
-      dob          TEXT NOT NULL,
-      payer_id     TEXT NOT NULL,
-      payer_name   TEXT NOT NULL,
-      cpt          TEXT NOT NULL,
-      icd10        TEXT NOT NULL,
-      urgency      TEXT NOT NULL,
-      notes        TEXT,
-      status       TEXT NOT NULL,
-      eta_days     INTEGER NOT NULL DEFAULT 0,
-      meta_json    JSONB NOT NULL DEFAULT '{}'::jsonb
-    );
-  `;
-  // if table existed already, make sure meta_json exists
-  await sql`ALTER TABLE submissions
-            ADD COLUMN IF NOT EXISTS meta_json JSONB NOT NULL DEFAULT '{}'::jsonb;`;
-  await sql`CREATE INDEX IF NOT EXISTS submissions_created_at_idx ON submissions (created_at DESC);`;
+    create table if not exists submissions (
+      id text primary key,
+      created_at timestamptz not null default now(),
+      patient_name text not null,
+      dob text not null,
+      payer_id text not null,
+      payer_name text not null,
+      cpt text,
+      icd10 text,
+      urgency text not null,
+      status text not null,
+      eta_days int not null default 0,
+      notes text,
+      meta jsonb
+    )`;
 }
 
 export default async function handler(req: Request) {
   try {
-    if (req.method === "OPTIONS") return json({});
     await ensureSchema();
 
-    const sql = getSql();
-
     if (req.method === "GET") {
-      const rows = await sql<{
-        id: string; created_at: string; patient_name: string; dob: string;
-        payer_id: string; payer_name: string; cpt: string; icd10: string;
-        urgency: string; notes: string | null; status: string; eta_days: number | null;
-        meta_json: any;
-      }[]>`SELECT * FROM submissions ORDER BY created_at DESC LIMIT 50;`;
+      const rows = (await sql`
+        select id,
+               created_at,
+               patient_name,
+               dob,
+               payer_id,
+               payer_name,
+               cpt,
+               icd10,
+               urgency,
+               status,
+               eta_days,
+               notes,
+               meta
+        from submissions
+        order by created_at desc
+        limit 50
+      `) as unknown as Array<Record<string, any>>;
 
-      const items = rows.map((r) => ({
-        id: r.id,
-        createdAt: r.created_at,
-        patientName: r.patient_name,
-        dob: r.dob,
-        payerId: r.payer_id,
-        payerName: r.payer_name,
-        cpt: r.cpt,
-        icd10: r.icd10,
-        urgency: r.urgency as "Routine" | "Urgent" | "Emergent",
-        notes: r.notes ?? "",
-        status: r.status,
+      const items: Submission[] = rows.map((r) => ({
+        id: String(r.id),
+        createdAt: new Date(r.created_at).toISOString(),
+        patientName: String(r.patient_name),
+        dob: String(r.dob),
+        payerId: String(r.payer_id),
+        payerName: String(r.payer_name),
+        cpt: r.cpt ? String(r.cpt) : "",
+        icd10: r.icd10 ? String(r.icd10) : "",
+        urgency: (r.urgency || "Routine") as Submission["urgency"],
+        status: String(r.status),
         etaDays: Number(r.eta_days ?? 0),
-        meta: r.meta_json ?? {},
+        notes: r.notes ? String(r.notes) : "",
+        meta: r.meta ?? null,
       }));
+
       return json({ items });
     }
 
     if (req.method === "POST") {
-      const body = (await req.json()) as any;
-      const required = ["patientName", "dob", "payerId", "payerName", "cpt", "icd10", "urgency", "status"];
-      const missing = required.filter((k) => !body?.[k]);
-      if (missing.length) return json({ error: "Missing fields", missing }, 400);
+      const body = await req.json();
 
       const id = crypto.randomUUID();
-      const meta = body.meta ?? {}; // provider/patient/appointment/codes, etc.
+      const created = (await sql`
+        insert into submissions
+          (id, patient_name, dob, payer_id, payer_name, cpt, icd10, urgency, status, eta_days, notes, meta)
+        values
+          (${id},
+           ${body.patientName},
+           ${body.dob},
+           ${body.payerId},
+           ${body.payerName},
+           ${body.cpt ?? ""},
+           ${body.icd10 ?? ""},
+           ${body.urgency ?? "Routine"},
+           ${body.status ?? "Submitted"},
+           ${body.etaDays ?? 0},
+           ${body.notes ?? ""},
+           ${JSON.stringify(body.meta) ?? null})
+        returning id, created_at, patient_name, dob, payer_id, payer_name, cpt, icd10, urgency, status, eta_days, notes, meta
+      `) as unknown as Array<Record<string, any>>;
 
-      const ret = await sql<{ created_at: string }[]>`
-        INSERT INTO submissions
-          (id, patient_name, dob, payer_id, payer_name, cpt, icd10, urgency, notes, status, eta_days, meta_json)
-        VALUES
-          (${id}, ${body.patientName.trim()}, ${body.dob}, ${body.payerId}, ${body.payerName},
-           ${String(body.cpt).trim()}, ${String(body.icd10).trim().toUpperCase()},
-           ${body.urgency}, ${String(body.notes || "").trim()}, ${body.status}, ${Number(body.etaDays || 0)},
-           ${meta}::jsonb)
-        RETURNING created_at;
-      `;
+      const r = created[0];
+      const record: Submission = {
+        id: String(r.id),
+        createdAt: new Date(r.created_at).toISOString(),
+        patientName: String(r.patient_name),
+        dob: String(r.dob),
+        payerId: String(r.payer_id),
+        payerName: String(r.payer_name),
+        cpt: r.cpt ? String(r.cpt) : "",
+        icd10: r.icd10 ? String(r.icd10) : "",
+        urgency: (r.urgency || "Routine") as Submission["urgency"],
+        status: String(r.status),
+        etaDays: Number(r.eta_days ?? 0),
+        notes: r.notes ? String(r.notes) : "",
+        meta: r.meta ?? null,
+      };
 
-      const createdAt = ret[0].created_at;
-
-      return json(
-        {
-          ok: true,
-          record: {
-            id,
-            createdAt,
-            patientName: body.patientName.trim(),
-            dob: body.dob,
-            payerId: body.payerId,
-            payerName: body.payerName,
-            cpt: String(body.cpt).trim(),
-            icd10: String(body.icd10).trim().toUpperCase(),
-            urgency: body.urgency,
-            notes: String(body.notes || "").trim(),
-            status: body.status,
-            etaDays: Number(body.etaDays || 0),
-            meta,
-          },
-        },
-        201
-      );
+      return json({ ok: true, record }, 201);
     }
 
     return json({ error: "Method Not Allowed" }, 405);
   } catch (e: any) {
-    return json({ error: "Server error", message: String(e?.message || e) }, 500);
+    console.error("submissions error:", e?.stack || e);
+    return json({ ok: false, error: String(e?.message || e) }, 500);
   }
 }

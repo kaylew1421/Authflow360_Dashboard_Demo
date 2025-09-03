@@ -1,32 +1,37 @@
 // /api/upload.ts
 export const config = { runtime: "edge" };
+
 import { put } from "@vercel/blob";
 
-const json = (d: unknown, s = 200) =>
-  new Response(JSON.stringify(d), {
-    status: s,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "POST, OPTIONS",
-      "access-control-allow-headers": "Content-Type",
-    },
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
   });
+}
 
 export default async function handler(req: Request) {
-  if (req.method === "OPTIONS") return json({});
   if (req.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
 
-  const form = await req.formData();
-  const file = form.get("file") as File | null;
-  if (!file) return json({ error: "No file provided" }, 400);
-  if (file.size > 10 * 1024 * 1024) return json({ error: "Max 10MB" }, 413);
+  try {
+    const form = await req.formData();
+    const file = form.get("file") as File | null;
+    if (!file) return json({ ok: false, error: "No file provided" }, 400);
 
-  const key = `submissions/${Date.now()}-${crypto.randomUUID()}-${file.name}`;
-  const { url } = await put(key, file, {
-    access: "private",
-    contentType: file.type || "application/octet-stream",
-  });
+    const blob = await put(file.name, file, {
+      access: "public",          // <-- change from "private"
+      addRandomSuffix: true,
+    });
 
-  return json({ ok: true, key, url, name: file.name, size: file.size, type: file.type });
+    return json({
+      ok: true,
+      key: blob.pathname,
+      url: blob.url,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    });
+  } catch (e: any) {
+    return json({ ok: false, error: String(e?.message || e) }, 500);
+  }
 }
