@@ -118,12 +118,23 @@ export default function Authorizations() {
     return Object.keys(e).length === 0;
   }
 
+  // ---- raw-bytes upload (no multipart) ----
   async function uploadFile(file: File): Promise<Attachment> {
-    const fd = new FormData();
-    fd.append("file", file);
-    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const r = await fetch("/api/upload", {
+      method: "POST",
+      headers: {
+        "content-type": file.type || "application/octet-stream",
+        "x-filename": encodeURIComponent(file.name),
+        "x-file-type": file.type || "application/octet-stream",
+      },
+      body: file, // raw bytes
+    });
+
     if (!r.ok) throw new Error(`Upload failed: HTTP ${r.status}`);
-    const data = (await r.json()) as Attachment & { ok: boolean };
+
+    const data = (await r.json()) as Attachment & { ok: boolean; error?: string };
+    if (!data.ok) throw new Error(data.error || "Upload failed");
+
     return { key: data.key, url: data.url, name: data.name, size: data.size, type: data.type };
   }
 

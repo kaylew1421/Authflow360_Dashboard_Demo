@@ -1,6 +1,6 @@
-// root/api/upload.ts
-// Vercel Serverless Function (Node runtime)
-export const config = { runtime: "nodejs18.x" };
+// api/upload.ts
+// Vercel Serverless Function (Node runtime, NOT edge)
+export const config = { runtime: "nodejs" };
 
 type VercelReq = NodeJS.ReadableStream & {
   method?: string;
@@ -28,24 +28,26 @@ export default async function handler(req: VercelReq, res: VercelRes) {
       return;
     }
 
-    const filename =
-      (req.headers["x-filename"] as string | undefined) ?? "unnamed.bin";
+    const filename = (req.headers["x-filename"] as string) || "unnamed.bin";
     const filetype =
-      (req.headers["x-file-type"] as string | undefined) ??
-      "application/octet-stream";
+      (req.headers["x-file-type"] as string) || "application/octet-stream";
 
-    // read raw bytes
+    // read raw bytes (client sends the File directly as the body)
     const fileBuffer = await readStreamToBuffer(req);
-    const size = fileBuffer.byteLength;
 
-    // TODO: Persist to your storage (S3, Vercel Blob, etc.)
-    // For now we return mock metadata:
-    const url = `/uploads/${encodeURIComponent(filename)}`;
+    if (!fileBuffer || fileBuffer.length === 0) {
+      res.status(400).json({ ok: false, error: "Empty body" });
+      return;
+    }
+
+    // TODO: upload fileBuffer to storage (S3/Vercel Blob/etc.) and return a real URL
+    const size = fileBuffer.byteLength;
+    const url = `/uploads/${encodeURIComponent(filename)}`; // placeholder
 
     res.setHeader("Content-Type", "application/json");
     res.status(200).json({
       ok: true,
-      key: filename, // replace with storage key/id when you add real storage
+      key: filename, // swap to your storage key later
       url,
       name: decodeURIComponent(filename),
       size,
