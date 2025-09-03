@@ -1,5 +1,4 @@
 // api/payers.ts
-// Force Node runtime so we don't hit Edge bundling issues
 export const config = { runtime: "nodejs" };
 
 type Payer = {
@@ -67,42 +66,24 @@ const PAYERS: Payer[] = [
   },
 ];
 
-function setCors(res: any) {
-  res.setHeader("access-control-allow-origin", "*");
-  res.setHeader("access-control-allow-methods", "GET, OPTIONS");
-  res.setHeader("access-control-allow-headers", "Content-Type, Authorization");
-}
-
 export default function handler(req: any, res: any) {
   try {
-    setCors(res);
-
-    if (req.method === "OPTIONS") {
-      res.statusCode = 200;
-      return res.end();
-    }
-
     if (req.method !== "GET") {
-      res.statusCode = 405;
+      res.status(405);
       res.setHeader("content-type", "application/json");
-      return res.end(JSON.stringify({ error: "Method Not Allowed" }));
+      return res.json({ ok: false, error: "Method Not Allowed" });
     }
 
-    // Build a safe absolute URL (Node runtime)
-    const base =
-      (req.headers && req.headers.host)
-        ? `https://${req.headers.host}`
-        : "http://localhost";
-    const url = new URL(req.url || "/api/payers", base);
+    // Build absolute URL safely on Node runtime
+    const host = req.headers?.host || "localhost";
+    const protocol = host.includes("localhost") ? "http" : "https";
+    const url = new URL(req.url || "/api/payers", `${protocol}://${host}`);
 
     const q = (url.searchParams.get("q") || "").toLowerCase();
     const state = (url.searchParams.get("state") || "").toUpperCase();
     const plan = (url.searchParams.get("plan") || "").toUpperCase();
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-    const pageSize = Math.min(
-      50,
-      Math.max(1, parseInt(url.searchParams.get("pageSize") || "10", 10))
-    );
+    const pageSize = Math.min(50, Math.max(1, parseInt(url.searchParams.get("pageSize") || "10", 10)));
 
     let results = PAYERS.slice();
 
@@ -114,27 +95,19 @@ export default function handler(req: any, res: any) {
       );
     }
     if (state) results = results.filter((r) => r.states.includes(state));
-    if (plan)
-      results = results.filter((r) =>
-        r.plans.some((p) => p.toUpperCase() === plan)
-      );
+    if (plan) results = results.filter((r) => r.plans.some((p) => p.toUpperCase() === plan));
 
     const total = results.length;
     const start = (page - 1) * pageSize;
     const items = results.slice(start, start + pageSize);
 
-    res.statusCode = 200;
+    res.status(200);
     res.setHeader("content-type", "application/json");
     res.setHeader("cache-control", "no-store");
-    res.end(JSON.stringify({ page, pageSize, total, items }));
+    return res.json({ ok: true, page, pageSize, total, items });
   } catch (err: any) {
-    res.statusCode = 500;
+    res.status(500);
     res.setHeader("content-type", "application/json");
-    res.end(
-      JSON.stringify({
-        error: "Server error",
-        message: String(err?.message || err),
-      })
-    );
+    return res.json({ ok: false, error: "Server error", message: String(err?.message || err) });
   }
 }
