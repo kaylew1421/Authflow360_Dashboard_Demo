@@ -52,7 +52,7 @@ export default function Authorizations() {
 
   // ---- patient info ----
   const [memberId, setMemberId] = useState("");
-  const [patientSex, setPatientSex] = useState<"F" | "M" | "X" | "U" | "">("");
+  const [patientSex, setPatientSex] = useState<"F" | "M" | "O" | "">("");
 
   // ---- appointment ----
   const [apptType, setApptType] = useState<AppointmentType>("Imaging");
