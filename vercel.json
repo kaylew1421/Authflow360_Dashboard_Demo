@@ -1,0 +1,4 @@
+{
+  "functions": {
+    "api/payers.ts": { "runtime": "nodejs20.x" },
+}
